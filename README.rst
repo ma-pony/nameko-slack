@@ -62,7 +62,7 @@ event coming from Slack:
 
     # service.py
 
-    from nameko_slack import rtm
+    from nameko_slackclient import rtm
 
     class Service:
 
@@ -93,7 +93,7 @@ Listen for events of a particular type:
 
 .. code:: python
 
-    from nameko_slack import rtm
+    from nameko_slackclient import rtm
 
     class Service:
 
@@ -107,7 +107,7 @@ Listen for any message type event:
 
 .. code:: python
 
-    from nameko_slack import rtm
+    from nameko_slackclient import rtm
 
     class Service:
 
@@ -121,7 +121,7 @@ Use regular expressions to fire on matching messages only:
 
 .. code:: python
 
-    from nameko_slack import rtm
+    from nameko_slackclient import rtm
 
     class Service:
 
@@ -136,7 +136,7 @@ to the entrypoint:
 
 .. code:: python
 
-    from nameko_slack import rtm
+    from nameko_slackclient import rtm
 
     class Service:
 
@@ -155,7 +155,7 @@ entrypoint:
 
 .. code:: python
 
-    from nameko_slack import rtm
+    from nameko_slackclient import rtm
 
     class Service:
 
@@ -181,7 +181,7 @@ Run multiple RTM bots:
 
     # service.py
 
-    from nameko_slack import rtm
+    from nameko_slackclient import rtm
 
     class Service:
 
@@ -229,7 +229,7 @@ The dependency provider uses the same config key as the RTM extension:
     # service.py
 
     from nameko.rpc import rpc
-    from nameko_slack import web
+    from nameko_slackclient import web
 
 
     class Service:
@@ -263,7 +263,7 @@ You can also use multiple bots:
     # service.py
 
     from nameko.rpc import rpc
-    from nameko_slack import web
+    from nameko_slackclient import web
 
 
     class Service:
