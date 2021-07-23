@@ -7,8 +7,8 @@ from nameko.exceptions import ConfigurationError
 from nameko.testing.services import dummy
 from nameko.testing.utils import get_extension
 
-from nameko_slack import constants
-from nameko_slack.web import Slack
+from nameko_slackclient import constants
+from nameko_slackclient.web import Slack
 
 
 @pytest.fixture

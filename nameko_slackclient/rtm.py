@@ -1,14 +1,13 @@
-# -*- coding: utf-8 -*-
+import asyncio
 import re
 from functools import partial
 
 import eventlet
 from nameko.exceptions import ConfigurationError
 from nameko.extensions import Entrypoint, ProviderCollector, SharedExtension
-from slackclient import SlackClient
+from slack import RTMClient
 
-from nameko_slack import constants
-
+from nameko_slackclient import constants
 
 EVENT_TYPE_MESSAGE = "message"
 
@@ -30,14 +29,15 @@ class SlackRTMClientManager(SharedExtension, ProviderCollector):
             raise ConfigurationError(
                 "`{}` config key not found".format(constants.CONFIG_KEY)
             )
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
         token = config.get("TOKEN")
         clients = config.get("BOTS")
         if token:
-            self.clients[constants.DEFAULT_BOT_NAME] = SlackClient(token)
+            self.clients[constants.DEFAULT_BOT_NAME] = RTMClient(token=token)
         if clients:
             for bot_name, token in clients.items():
-                self.clients[bot_name] = SlackClient(token)
+                self.clients[bot_name] = RTMClient(token=token)
 
         if not self.clients:
             raise ConfigurationError(
@@ -48,24 +48,18 @@ class SlackRTMClientManager(SharedExtension, ProviderCollector):
 
     def start(self):
         for bot_name, client in self.clients.items():
-            client.server.rtm_connect()
-            run = partial(self.run, bot_name, client)
+            run = partial(self.run, client)
             self.container.spawn_managed_thread(run)
 
-    def run(self, bot_name, client):
+    def run(self, client):
         while True:
-            for event in client.rtm_read():
-                self.handle(bot_name, event)
+            client.start()
             eventlet.sleep(self.read_interval)
 
-    def handle(self, bot_name, event):
-        for provider in self._providers:
-            if provider.bot_name == bot_name:
-                provider.handle_event(event)
-
-    def reply(self, bot_name, event, message):
-        client = self.clients[bot_name]
-        client.rtm_send_message(event["channel"], message)
+    def stop(self):
+        for bot_name, client in self.clients.items():
+            if client:
+                client.stop()
 
 
 class RTMEventHandlerEntrypoint(Entrypoint):
@@ -101,34 +95,41 @@ class RTMMessageHandlerEntrypoint(RTMEventHandlerEntrypoint):
             self.message_pattern = re.compile(message_pattern)
         else:
             self.message_pattern = None
-        super(RTMMessageHandlerEntrypoint, self).__init__(**kwargs)
+        super(Entrypoint, self).__init__(**kwargs)
 
-    def handle_event(self, event):
-        if event.get("type") == EVENT_TYPE_MESSAGE:
-            if self.message_pattern:
-                match = self.message_pattern.match(event.get("text", ""))
-                if match:
-                    kwargs = match.groupdict()
-                    args = () if kwargs else match.groups()
-                    args = (event, event.get("text")) + args
-                else:
-                    return
+    def setup(self):
+        self.clients.register_provider(self)
+        RTMClient.on(event=EVENT_TYPE_MESSAGE, callback=self.handle_message)
+
+    def stop(self):
+        self.clients.unregister_provider(self)
+
+    def handle_message(self, **payload):
+
+        data = payload["data"]
+        web_client = payload["web_client"]
+        if self.message_pattern:
+            match = self.message_pattern.match(data.get("text", ""))
+            if match:
+                kwargs = match.groupdict()
+                args = () if kwargs else match.groups()
+                args = (data, data.get("text")) + args
             else:
-                args = (event, event.get("text"))
-                kwargs = {}
-            context_data = {}
-            handle_result = partial(self.handle_result, event)
-            self.container.spawn_worker(
-                self,
-                args,
-                kwargs,
-                context_data=context_data,
-                handle_result=handle_result,
-            )
+                return
+        else:
+            args = (data, data.get("text"))
+            kwargs = {}
+        context_data = {}
+        handle_result = partial(self.handle_result, web_client, data)
+        self.container.spawn_worker(
+            self, args, kwargs, context_data=context_data, handle_result=handle_result
+        )
 
-    def handle_result(self, event, worker_ctx, result, exc_info):
+    def handle_result(self, web_client, data, worker_ctx, result, exc_info):
         if result:
-            self.clients.reply(self.bot_name, event, result)
+            web_client.chat_postMessage(
+                channel=data["channel"], thread_ts=data["ts"], text=result
+            )
         return result, exc_info
 
 

@@ -6,7 +6,7 @@ from mock import Mock, call, patch
 from nameko.exceptions import ConfigurationError
 from nameko.testing.utils import get_extension
 
-from nameko_slack import constants, rtm
+from nameko_slackclient import constants, rtm
 
 
 def test_client_manager_setup_missing_config_key():
@@ -42,7 +42,7 @@ def test_client_manager_setup_missing_mandatory_connection_keys():
         {"SLACK": {"BOTS": {constants.DEFAULT_BOT_NAME: "abc-123"}}},
     ),
 )
-@patch("nameko_slack.rtm.SlackClient")
+@patch("nameko_slackclient.rtm.RTMClient")
 def test_client_manager_setup_with_default_bot_token(mocked_slack_client, config):
 
     client_manager = rtm.SlackRTMClientManager()
@@ -58,7 +58,7 @@ def test_client_manager_setup_with_default_bot_token(mocked_slack_client, config
     assert mocked_slack_client.call_args == call("abc-123")
 
 
-@patch("nameko_slack.rtm.SlackClient")
+@patch("nameko_slackclient.rtm.RTMClient")
 def test_client_manager_setup_with_multiple_bot_tokens(mocked_slack_client):
 
     config = {"SLACK": {"BOTS": {"spam": "abc-123", "ham": "def-456"}}}
@@ -94,14 +94,14 @@ def service_runner(container_factory, config):
 
     def _runner(service_class, events):
 
-        with patch("nameko_slack.rtm.SlackClient") as SlackClient:
-            SlackClient.return_value.rtm_read.return_value = events
+        with patch("nameko_slackclient.rtm.RTMClient") as RTMClient:
+            RTMClient.return_value.rtm_read.return_value = events
             container = container_factory(service_class, config)
             container.start()
             sleep(0.1)  # enough to handle all the test events
 
         # return reply calls
-        return SlackClient.return_value.rtm_send_message.call_args_list
+        return RTMClient.return_value.rtm_send_message.call_args_list
 
     return _runner
 
@@ -328,8 +328,8 @@ class TestMultipleBotAccounts:
 
             clients_by_token = {client.token: client for client in clients}
 
-            with patch("nameko_slack.rtm.SlackClient") as SlackClient:
-                SlackClient.side_effect = lambda token: clients_by_token[token]
+            with patch("nameko_slackclient.rtm.RTMClient") as RTMClient:
+                RTMClient.side_effect = lambda token: clients_by_token[token]
                 container = container_factory(service_class, config)
                 container.start()
                 sleep(0.1)  # enough to handle all the test events
@@ -439,8 +439,8 @@ def test_replies_on_handle_message(events, service_runner):
     ]
 
 
-@patch("nameko_slack.rtm.SlackClient")
-def test_handlers_do_not_block(SlackClient, container_factory, config, tracker):
+@patch("nameko_slackclient.rtm.RTMClient")
+def test_handlers_do_not_block(RTMClient, container_factory, config, tracker):
 
     work_1 = Event()
     work_2 = Event()
@@ -467,7 +467,7 @@ def test_handlers_do_not_block(SlackClient, container_factory, config, tracker):
         else:
             return []
 
-    SlackClient.return_value.rtm_read.side_effect = rtm_read
+    RTMClient.return_value.rtm_read.side_effect = rtm_read
     container = container_factory(Service, config)
     container.start()
 

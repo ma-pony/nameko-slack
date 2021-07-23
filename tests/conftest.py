@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import pytest
 
-from nameko_slack import constants
+from nameko_slackclient import constants
 
 
 @pytest.fixture

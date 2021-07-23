@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 from nameko.exceptions import ConfigurationError
 from nameko.extensions import DependencyProvider
-from slackclient import SlackClient
-
-from nameko_slack import constants
+from slack import WebClient
+from nameko_slackclient import constants
 
 
 class Slack(DependencyProvider):
@@ -38,7 +37,7 @@ class Slack(DependencyProvider):
                 "No token provided by `{}` config".format(constants.CONFIG_KEY)
             )
 
-        self.client = SlackClient(token)
+        self.client = WebClient(token)
 
     def get_dependency(self, worker_ctx):
         return self.client
