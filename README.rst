@@ -14,6 +14,15 @@ Slack Extensions for Nameko
 .. _Slack Developer Kit for Python: http://slackapi.github.io/python-slackclient
 
 
+Quick Start
+-----------
+
+Install from `PyPI`_::
+
+    pip install nameko-slackclient
+
+.. _PyPI: https://pypi.python.org/pypi/nameko-slackclient
+
 Real Time Messaging Client
 ==========================
 
