@@ -6,7 +6,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="nameko-slackclient",
-    version="0.0.1",
+    version="0.0.2",
     description="Nameko extension for interaction with Slack APIs",
     long_description=open("README.rst").read(),
     url="https://github.com/ma-pony/nameko-slack",

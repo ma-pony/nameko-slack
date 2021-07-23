@@ -26,6 +26,8 @@ Install from `PyPI`_::
 Real Time Messaging Client
 ==========================
 
+"nameko>=2.7.0", "slackclient>=2"
+
 The RTM extension is a Websocket client for Slack's `Real Time Messaging API`_
 that allows you to receive events from Slack in real time. The ``rtm`` module
 contains two Nameko entrypoints for handling such events - ``handle_event`` and
