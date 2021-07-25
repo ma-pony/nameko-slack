@@ -66,20 +66,20 @@ class RTMEventHandlerEntrypoint(Entrypoint):
 
     clients = SlackRTMClientManager()
 
-    def __init__(self, event_type=None, bot_name=None, **kwargs):
+    def __init__(self, event_type, bot_name=None, **kwargs):
         self.bot_name = bot_name or constants.DEFAULT_BOT_NAME
         self.event_type = event_type
         super(RTMEventHandlerEntrypoint, self).__init__(**kwargs)
 
     def setup(self):
         self.clients.register_provider(self)
+        RTMClient.on(event=self.event_type, callback=self.handle_event)
 
     def stop(self):
         self.clients.unregister_provider(self)
 
-    def handle_event(self, event):
-        if self.event_type and event.get("type") != self.event_type:
-            return
+    def handle_event(self, **payload):
+        event = payload["data"]
         args = (event,)
         kwargs = {}
         context_data = {}

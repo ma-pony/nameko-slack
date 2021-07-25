@@ -5,12 +5,12 @@ from eventlet.event import Event
 from mock import Mock, call, patch
 from nameko.exceptions import ConfigurationError
 from nameko.testing.utils import get_extension
+from slack import RTMClient
 
 from nameko_slackclient import constants, rtm
 
 
 def test_client_manager_setup_missing_config_key():
-
     config = {}
 
     client_manager = rtm.SlackRTMClientManager()
@@ -23,7 +23,6 @@ def test_client_manager_setup_missing_config_key():
 
 
 def test_client_manager_setup_missing_mandatory_connection_keys():
-
     config = {"SLACK": {}}
 
     client_manager = rtm.SlackRTMClientManager()
@@ -38,13 +37,12 @@ def test_client_manager_setup_missing_mandatory_connection_keys():
 @pytest.mark.parametrize(
     "config",
     (
-        {"SLACK": {"TOKEN": "abc-123"}},
-        {"SLACK": {"BOTS": {constants.DEFAULT_BOT_NAME: "abc-123"}}},
+            {"SLACK": {"TOKEN": "abc-123"}},
+            {"SLACK": {"BOTS": {constants.DEFAULT_BOT_NAME: "abc-123"}}},
     ),
 )
 @patch("nameko_slackclient.rtm.RTMClient")
 def test_client_manager_setup_with_default_bot_token(mocked_slack_client, config):
-
     client_manager = rtm.SlackRTMClientManager()
     client_manager.container = Mock(config=config)
 
@@ -52,15 +50,14 @@ def test_client_manager_setup_with_default_bot_token(mocked_slack_client, config
 
     assert constants.DEFAULT_BOT_NAME in client_manager.clients
     assert (
-        client_manager.clients[constants.DEFAULT_BOT_NAME]
-        == mocked_slack_client.return_value
+            client_manager.clients[constants.DEFAULT_BOT_NAME]
+            == mocked_slack_client.return_value
     )
     assert mocked_slack_client.call_args == call("abc-123")
 
 
 @patch("nameko_slackclient.rtm.RTMClient")
 def test_client_manager_setup_with_multiple_bot_tokens(mocked_slack_client):
-
     config = {"SLACK": {"BOTS": {"spam": "abc-123", "ham": "def-456"}}}
 
     client_manager = rtm.SlackRTMClientManager()
@@ -82,6 +79,14 @@ def tracker():
     yield Mock()
 
 
+class MockRTMClient(RTMClient):
+    def start(self):
+        return
+
+    def stop(self):
+        return
+
+
 @pytest.fixture
 def service_runner(container_factory, config):
     """
@@ -94,14 +99,19 @@ def service_runner(container_factory, config):
 
     def _runner(service_class, events):
 
-        with patch("nameko_slackclient.rtm.RTMClient") as RTMClient:
-            RTMClient.return_value.rtm_read.return_value = events
+        with patch("nameko_slackclient.rtm.RTMClient", MockRTMClient) as RTMClient:
+            RTMClient._callbacks.clear()
+
             container = container_factory(service_class, config)
             container.start()
             sleep(0.1)  # enough to handle all the test events
 
-        # return reply calls
-        return RTMClient.return_value.rtm_send_message.call_args_list
+        callbacks = RTMClient._callbacks
+        for callbacks in callbacks.values():
+            for func in callbacks:
+                for event in events:
+                    func(**event)
+        return container
 
     return _runner
 
@@ -113,14 +123,34 @@ def make_message_event():
 
     def _make(**overrides):
         event = {
-            "type": "message",
-            "user": "U11",
-            "text": "spam",
-            "channel": "D11",
-            "ts": "1480798992.000002",
-            "team": "T11",
+            'rtm_client': Mock,
+            'web_client': Mock,
+            'data': {
+                'user': 'UFJNNNNNN',
+                'client_msg_id': 'f8d9ca41-0184-4e2c-93e4-e8adc38ba9de',
+                'suppress_notification': False,
+                'text': 'run',
+                'team': 'T08C7NNNN',
+                'blocks': [
+                    {'type': 'rich_text',
+                     'block_id': '0CNNN',
+                     'elements': [
+                         {
+                             'type': 'rich_text_section',
+                             'elements': [{'type': 'text', 'text': 'run'}]
+                         }
+                     ]
+                     }
+                ],
+                'source_team': 'T08C7NNNN',
+                'user_team': 'T08C7NNNN',
+                'channel': 'GEN19NNNN',
+                'event_ts': '1627205084.000800',
+                'ts': '1627205084.000800'
+            }
         }
-        event.update(overrides)
+
+        event["data"].update(overrides)
         return event
 
     return _make
@@ -129,38 +159,21 @@ def make_message_event():
 @pytest.fixture
 def events(make_message_event):
     return [
-        {"type": "hello"},
-        {"type": "presence_change", "presence": "active", "user": "U11"},
         make_message_event(text="spam ham"),
-        {"type": "presence_change", "presence": "away", "user": "U00"},
         make_message_event(text="ham spam"),
-        {},  # emtpy event, no type specified
         make_message_event(text="spam egg"),
     ]
 
 
 class TestHandleEvents:
-    def test_handle_any_event(self, events, service_runner, tracker):
-        class Service:
-
-            name = "sample"
-
-            @rtm.handle_event
-            def handle_event(self, event):
-                tracker.handle_event(event)
-
-        service_runner(Service, events)
-
-        assert tracker.handle_event.call_args_list == [call(event) for event in events]
 
     def test_handle_event_by_type(self, events, service_runner, tracker):
         class Service:
-
             name = "sample"
 
             @rtm.handle_event("presence_change")
-            def handle_event(self, event):
-                tracker.handle_event(event)
+            def handle_event(self, data):
+                tracker.handle_event(data)
 
         service_runner(Service, events)
 
@@ -168,44 +181,15 @@ class TestHandleEvents:
             call(event) for event in events if event.get("type") == "presence_change"
         ]
 
-    def test_handle_any_message(self, events, service_runner, tracker):
-        class Service:
-
-            name = "sample"
-
-            @rtm.handle_message
-            def handle_event(self, event, message):
-                tracker.handle_event(event, message)
-
-        service_runner(Service, events)
-
-        assert tracker.handle_event.call_args_list == [
-            call(event, event.get("text"))
-            for event in events
-            if event.get("type") == "message"
-        ]
-
     def test_handle_message_matching_regex(
-        self, make_message_event, service_runner, tracker
+        self, make_message_event, service_runner, tracker, events
     ):
         class Service:
-
             name = "sample"
 
             @rtm.handle_message("^spam")
-            def handle_event(self, event, message):
-                tracker.handle_event(event, message)
-
-        events = [
-            {"type": "hello"},
-            {"type": "presence_change", "presence": "active", "user": "U11"},
-            make_message_event(text="spam ham"),
-            {"type": "presence_change", "presence": "away", "user": "U00"},
-            make_message_event(text="ham spam"),
-            make_message_event(text="spam egg"),
-            {},  # no type specified
-            {"type": "message"},  # no text of a message
-        ]
+            def handle_event(self, data):
+                tracker.handle_event(data)
 
         service_runner(Service, events)
 
@@ -218,7 +202,6 @@ class TestHandleEvents:
         self, make_message_event, service_runner, tracker
     ):
         class Service:
-
             name = "sample"
 
             @rtm.handle_message("^spam (\\d+)")
@@ -242,7 +225,6 @@ class TestHandleEvents:
         self, make_message_event, service_runner, tracker
     ):
         class Service:
-
             name = "sample"
 
             @rtm.handle_message("^spam (?P<ham>\\d+)(\\w*)")
@@ -269,7 +251,7 @@ class TestHandleEvents:
 
             name = "test"
 
-            @rtm.handle_event
+            @rtm.handle_event("message")
             def handle_all_events(self, event):
                 tracker.handle_all_events(event)
 
@@ -325,25 +307,27 @@ class TestMultipleBotAccounts:
     @pytest.fixture
     def service_runner(self, container_factory, config):
         def _runner(service_class, clients):
-
             clients_by_token = {client.token: client for client in clients}
 
-            with patch("nameko_slackclient.rtm.RTMClient") as RTMClient:
+            with patch("nameko_slackclient.rtm.RTMClient", MockRTMClient) as RTMClient:
                 RTMClient.side_effect = lambda token: clients_by_token[token]
                 container = container_factory(service_class, config)
                 container.start()
                 sleep(0.1)  # enough to handle all the test events
-
+            callbacks = RTMClient._callbacks
+            for callbacks in callbacks.values():
+                for func in callbacks:
+                    for event in events:
+                        func(**event)
         return _runner
 
     def test_multiple_handlers(
         self, events, make_client, make_message_event, service_runner, tracker
     ):
         class Service:
-
             name = "test"
 
-            @rtm.handle_event(bot_name="Alice")
+            @rtm.handle_event("message", bot_name="Alice")
             def handle_all_events(self, event):
                 tracker.alice.handle_all_events(event)
 
@@ -369,19 +353,13 @@ class TestMultipleBotAccounts:
                 tracker.handle_spam_and_ham_messages(message)
 
         alices_events = [
-            {"type": "hello"},
             make_message_event(text="spam ham"),
             make_message_event(text="spam egg"),
-            {"type": "presence_change", "presence": "active", "user": "A11"},
-            {"type": "presence_change", "presence": "away", "user": "A00"},
             make_message_event(text="ham spam"),
         ]
 
         bobs_events = [
-            {"type": "hello"},
-            {"type": "presence_change", "presence": "active", "user": "B11"},
             make_message_event(text="spam ham"),
-            {"type": "presence_change", "presence": "away", "user": "B00"},
             make_message_event(text="ham spam"),
             make_message_event(text="spam egg"),
         ]
@@ -423,7 +401,6 @@ class TestMultipleBotAccounts:
 
 def test_replies_on_handle_message(events, service_runner):
     class Service:
-
         name = "sample"
 
         @rtm.handle_message
@@ -439,9 +416,7 @@ def test_replies_on_handle_message(events, service_runner):
     ]
 
 
-@patch("nameko_slackclient.rtm.RTMClient")
-def test_handlers_do_not_block(RTMClient, container_factory, config, tracker):
-
+def test_handlers_do_not_block(service_runner, config, tracker):
     work_1 = Event()
     work_2 = Event()
 
@@ -449,26 +424,22 @@ def test_handlers_do_not_block(RTMClient, container_factory, config, tracker):
 
         name = "sample"
 
-        @rtm.handle_event
+        @rtm.handle_event("message")
         def handle_1(self, event):
             work_1.wait()
             tracker.handle_1(event)
 
-        @rtm.handle_event
+        @rtm.handle_event("message")
         def handle_2(self, event):
             work_2.wait()
             tracker.handle_2(event)
 
-    events = [{"spam": "ham"}]
+    events = [
+        make_message_event(text="spam ham"),
+        {"spam": "ham"}
+    ]
 
-    def rtm_read():
-        if events:
-            return [events.pop(0)]
-        else:
-            return []
-
-    RTMClient.return_value.rtm_read.side_effect = rtm_read
-    container = container_factory(Service, config)
+    container = service_runner(Service, events)
     container.start()
 
     try:
@@ -499,12 +470,11 @@ def test_handlers_do_not_block(RTMClient, container_factory, config, tracker):
 
 
 @patch.object(rtm.RTMEventHandlerEntrypoint, "clients")
-def test_entrypoints_lifecycle(clients, container_factory, config):
+def test_entrypoints_lifecycle(clients, service_runner,events, config):
     class Service:
-
         name = "sample"
 
-        @rtm.handle_event
+        @rtm.handle_event("message")
         def handle_event(self, event):
             pass
 
@@ -512,7 +482,7 @@ def test_entrypoints_lifecycle(clients, container_factory, config):
         def handle_message(self, event, message):
             pass
 
-    container = container_factory(Service, config)
+    container = service_runner(Service, events)
 
     event_handler = get_extension(container, rtm.RTMEventHandlerEntrypoint)
     message_handler = get_extension(container, rtm.RTMMessageHandlerEntrypoint)
@@ -526,15 +496,14 @@ def test_entrypoints_lifecycle(clients, container_factory, config):
     assert call(message_handler) in clients.unregister_provider.mock_calls
 
 
-def test_expected_exceptions(container_factory, config):
+def test_expected_exceptions(service_runner, events, config):
     class Boom(Exception):
         pass
 
     class Service:
-
         name = "sample"
 
-        @rtm.handle_event(expected_exceptions=Boom)
+        @rtm.handle_event("message", expected_exceptions=Boom)
         def handle_event(self, event):
             pass
 
@@ -542,7 +511,7 @@ def test_expected_exceptions(container_factory, config):
         def handle_message(self, event, message):
             pass
 
-    container = container_factory(Service, config)
+    container = service_runner(Service, events)
 
     event_handler = get_extension(container, rtm.RTMEventHandlerEntrypoint)
     assert event_handler.expected_exceptions == Boom
@@ -551,15 +520,12 @@ def test_expected_exceptions(container_factory, config):
     assert message_handler.expected_exceptions == Boom
 
 
-def test_sensitive_arguments(container_factory, config):
-    class Boom(Exception):
-        pass
+def test_sensitive_arguments(service_runner, events, config):
 
     class Service:
-
         name = "sample"
 
-        @rtm.handle_event(sensitive_arguments="event.user")
+        @rtm.handle_event("message", sensitive_arguments="event.user")
         def handle_event(self, event):
             pass
 
@@ -567,7 +533,7 @@ def test_sensitive_arguments(container_factory, config):
         def handle_message(self, event, message):
             pass
 
-    container = container_factory(Service, config)
+    container = service_runner(Service, events)
 
     event_handler = get_extension(container, rtm.RTMEventHandlerEntrypoint)
     assert event_handler.sensitive_arguments == "event.user"

@@ -57,36 +57,6 @@ Or using environment variable within your config:
     SLACK:
         TOKEN: ${SLACK_BOT_TOKEN}
 
-Define your service with an entrypoint which will listen for and fire on any
-event coming from Slack:
-
-.. code:: python
-
-    # service.py
-
-    from nameko_slackclient import rtm
-
-    class Service:
-
-        name = 'some-service'
-
-        @rtm.handle_event
-        def on_any_event(self, event):
-            print(event)
-
-Finally, run the service:
-
-.. code::
-
-    $ SLACK_BOT_TOKEN=xoxb-abc-1232 nameko run --config ./config.yaml service
-    starting services: some-service
-    {'type': 'hello'}
-    {'type': 'presence_change', 'user': 'ABCDE1234', 'presence': 'active'}
-    {'type': 'user_typing', 'user': 'ABCDE1234', 'channel': 'ABCDE1234'}
-    {'type': 'message', 'text': 'spam', 'channel': 'ABCDE1234', 'user': 'ABC...
-    {'type': 'presence_change', 'user': 'ABCDE1234', 'presence': 'active'}
-    ...
-
 
 More Examples
 -------------
@@ -242,8 +212,7 @@ The dependency provider uses the same config key as the RTM extension:
 
         @rpc
         def say_hello(self, name):
-            self.slack.api_call(
-                'chat.postMessage',
+            self.slack.chat_postMessage(
                 channel="#nameko",
                 text="Hello from Nameko! :tada:")
 
@@ -277,11 +246,9 @@ You can also use multiple bots:
 
         @rpc
         def say_hello(self):
-            self.alice.api_call(
-                'chat.postMessage',
+            self.alice.chat_postMessage(
                 channel="#nameko",
                 text="Hello from Alice! :tada:")
-            self.bob.api_call(
-                'chat.postMessage',
+            self.bob.chat_postMessage(
                 channel="#nameko",
                 text="Hello from Bob! :tada:")
